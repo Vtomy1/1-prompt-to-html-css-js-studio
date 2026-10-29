@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { GeneratedComponent } from '../types';
-import { Copy, Check, Download, Eye, Code, FileText, Sparkles, Terminal, History, Plus, ShieldCheck } from 'lucide-react';
+import { Copy, Check, Download, Eye, Code, FileText, Sparkles, Terminal, History, Plus, ShieldCheck, Columns, Palette } from 'lucide-react';
 import { LiveSandbox } from './LiveSandbox';
+import { SplitPanePreview } from './SplitPanePreview';
 import { A11yAuditPanel } from './A11yAuditPanel';
+import { CssAnalyzerPanel } from './CssAnalyzerPanel';
 import { bundleIntoSingleFile } from '../utils/promptBuilder';
 import { runAccessibilityAudit } from '../utils/a11yAuditor';
+import { analyzeCss } from '../utils/cssAnalyzer';
 
 interface CodeInspectorProps {
   component: GeneratedComponent;
@@ -15,7 +18,7 @@ interface CodeInspectorProps {
   onShowNotice?: (type: 'error' | 'success', msg: string) => void;
 }
 
-type TabType = 'preview' | 'html' | 'css' | 'js' | 'bundle' | 'a11y' | 'prompt';
+type TabType = 'split' | 'preview' | 'html' | 'css' | 'js' | 'bundle' | 'a11y' | 'css-analyzer' | 'prompt';
 
 export const CodeInspector: React.FC<CodeInspectorProps> = ({
   component,
@@ -25,11 +28,14 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
   onSaveSnapshot,
   onShowNotice,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('preview');
+  const [activeTab, setActiveTab] = useState<TabType>('split');
   const [copiedTab, setCopiedTab] = useState<string | null>(null);
 
   // Compute live a11y issue count for tab badge
   const a11ySummary = runAccessibilityAudit(component.html);
+
+  // Compute live CSS issue count for tab badge
+  const cssSummary = analyzeCss(component.css, component.html);
 
   const fullBundle = bundleIntoSingleFile(
     component.title,
@@ -105,6 +111,15 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
     }
   };
 
+  const handleApplyCssFix = (newCss: string, notice: string) => {
+    if (onUpdateComponentCode) {
+      onUpdateComponentCode('css', newCss);
+    }
+    if (onShowNotice) {
+      onShowNotice('success', notice);
+    }
+  };
+
   const getTabLabel = (tab: TabType) => {
     switch (tab) {
       case 'html':
@@ -117,6 +132,8 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
         return 'Bundle';
       case 'prompt':
         return 'Prompt';
+      case 'css-analyzer':
+        return 'CSS Analyzer';
       default:
         return 'Code';
     }
@@ -128,6 +145,17 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-950 border-b border-slate-800">
         <div className="flex items-center gap-1 overflow-x-auto">
           <button
+            onClick={() => setActiveTab('split')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              activeTab === 'split'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            }`}
+          >
+            <Columns className="w-3.5 h-3.5 text-indigo-300" />
+            <span>Split-Pane (Live CSS)</span>
+          </button>
+          <button
             onClick={() => setActiveTab('preview')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
               activeTab === 'preview'
@@ -136,7 +164,7 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
             }`}
           >
             <Eye className="w-3.5 h-3.5" />
-            <span>Interactive Sandbox</span>
+            <span>Sandbox</span>
           </button>
           <button
             onClick={() => setActiveTab('html')}
@@ -200,6 +228,26 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
               }`}
             >
               {a11ySummary.totalIssues === 0 ? '✓' : a11ySummary.totalIssues}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab('css-analyzer')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              activeTab === 'css-analyzer'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            }`}
+          >
+            <Palette className="w-3.5 h-3.5 text-pink-400" />
+            <span>CSS Analyzer</span>
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-bold ${
+                cssSummary.totalIssues === 0
+                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                  : 'bg-amber-950 text-amber-300 border border-amber-800'
+              }`}
+            >
+              {cssSummary.totalIssues === 0 ? '✓' : cssSummary.totalIssues}
             </span>
           </button>
           <button
@@ -280,7 +328,7 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
             </button>
           )}
 
-          {activeTab !== 'preview' && activeTab !== 'a11y' && (
+          {activeTab !== 'preview' && activeTab !== 'a11y' && activeTab !== 'split' && activeTab !== 'css-analyzer' && (
             <>
               <button
                 onClick={() => handleCopySpecific(activeTab as any)}
@@ -314,12 +362,24 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
 
       {/* Tab Content Body */}
       <div className="flex-1 flex flex-col min-h-[520px]">
-        {activeTab === 'preview' ? (
+        {activeTab === 'split' ? (
+          <SplitPanePreview
+            component={component}
+            onUpdateComponentCode={onUpdateComponentCode}
+            onShowNotice={onShowNotice}
+          />
+        ) : activeTab === 'preview' ? (
           <LiveSandbox component={component} />
         ) : activeTab === 'a11y' ? (
           <A11yAuditPanel
             htmlCode={component.html}
             onApplyFix={handleApplyA11yFix}
+          />
+        ) : activeTab === 'css-analyzer' ? (
+          <CssAnalyzerPanel
+            cssCode={component.css}
+            htmlCode={component.html}
+            onApplyCssFix={handleApplyCssFix}
           />
         ) : (
           <div className="flex-1 relative flex flex-col bg-slate-950 font-mono text-xs">
