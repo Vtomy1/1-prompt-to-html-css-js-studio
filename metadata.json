@@ -1,0 +1,6 @@
+{
+  "name": "Prompt to HTML/CSS/JS Studio",
+  "description": "Convert prompts into responsive HTML, JavaScript, and CSS code with interactive form validation, modern styling techniques, and multi-model prompt templates.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
