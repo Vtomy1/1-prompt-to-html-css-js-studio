@@ -72,7 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
             activeView === 'diagnostics' ? 'text-indigo-400 font-semibold' : ''
           }`}
         >
-          Validation Audit
+          A11y & Validation Audit
         </button>
       </nav>
 

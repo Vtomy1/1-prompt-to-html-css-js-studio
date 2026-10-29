@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { GeneratedComponent } from '../types';
-import { Copy, Check, Download, Eye, Code, FileText, Sparkles, Terminal, History, Plus } from 'lucide-react';
+import { Copy, Check, Download, Eye, Code, FileText, Sparkles, Terminal, History, Plus, ShieldCheck } from 'lucide-react';
 import { LiveSandbox } from './LiveSandbox';
+import { A11yAuditPanel } from './A11yAuditPanel';
 import { bundleIntoSingleFile } from '../utils/promptBuilder';
+import { runAccessibilityAudit } from '../utils/a11yAuditor';
 
 interface CodeInspectorProps {
   component: GeneratedComponent;
@@ -10,9 +12,10 @@ interface CodeInspectorProps {
   onOpenHistory?: () => void;
   snapshotCount?: number;
   onSaveSnapshot?: () => void;
+  onShowNotice?: (type: 'error' | 'success', msg: string) => void;
 }
 
-type TabType = 'preview' | 'html' | 'css' | 'js' | 'bundle' | 'prompt';
+type TabType = 'preview' | 'html' | 'css' | 'js' | 'bundle' | 'a11y' | 'prompt';
 
 export const CodeInspector: React.FC<CodeInspectorProps> = ({
   component,
@@ -20,9 +23,13 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
   onOpenHistory,
   snapshotCount = 0,
   onSaveSnapshot,
+  onShowNotice,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('preview');
-  const [copied, setCopied] = useState(false);
+  const [copiedTab, setCopiedTab] = useState<string | null>(null);
+
+  // Compute live a11y issue count for tab badge
+  const a11ySummary = runAccessibilityAudit(component.html);
 
   const fullBundle = bundleIntoSingleFile(
     component.title,
@@ -48,10 +55,32 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(getCurrentCode());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopySpecific = (type: 'html' | 'css' | 'js' | 'bundle' | 'prompt') => {
+    let textToCopy = '';
+    let label = '';
+    if (type === 'html') {
+      textToCopy = component.html;
+      label = 'HTML';
+    } else if (type === 'css') {
+      textToCopy = component.css;
+      label = 'CSS';
+    } else if (type === 'js') {
+      textToCopy = component.js;
+      label = 'JavaScript';
+    } else if (type === 'bundle') {
+      textToCopy = fullBundle;
+      label = 'Single Bundle';
+    } else if (type === 'prompt') {
+      textToCopy = component.modelPromptOptimized;
+      label = 'Model Prompt';
+    }
+
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedTab(type);
+    if (onShowNotice) {
+      onShowNotice('success', `Copied ${label} to clipboard!`);
+    }
+    setTimeout(() => setCopiedTab(null), 2200);
   };
 
   const handleDownload = () => {
@@ -65,6 +94,32 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handleApplyA11yFix = (newHtml: string, notice: string) => {
+    if (onUpdateComponentCode) {
+      onUpdateComponentCode('html', newHtml);
+    }
+    if (onShowNotice) {
+      onShowNotice('success', notice);
+    }
+  };
+
+  const getTabLabel = (tab: TabType) => {
+    switch (tab) {
+      case 'html':
+        return 'HTML';
+      case 'css':
+        return 'CSS';
+      case 'js':
+        return 'JavaScript';
+      case 'bundle':
+        return 'Bundle';
+      case 'prompt':
+        return 'Prompt';
+      default:
+        return 'Code';
+    }
   };
 
   return (
@@ -125,7 +180,27 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
             }`}
           >
             <FileText className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Single-File Bundle</span>
+            <span>Single Bundle</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('a11y')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              activeTab === 'a11y'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>A11y Audit</span>
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-bold ${
+                a11ySummary.totalIssues === 0
+                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                  : 'bg-rose-950 text-rose-300 border border-rose-800'
+              }`}
+            >
+              {a11ySummary.totalIssues === 0 ? '✓' : a11ySummary.totalIssues}
+            </span>
           </button>
           <button
             onClick={() => setActiveTab('prompt')}
@@ -136,12 +211,50 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-            <span>Model Prompt Spec</span>
+            <span>Model Prompt</span>
           </button>
         </div>
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {/* Quick-copy individual tabs shortcut group */}
+          <div className="hidden lg:flex items-center gap-1 border-r border-slate-800 pr-2 mr-0.5">
+            <span className="text-[10px] uppercase font-mono text-slate-500 mr-1">Quick:</span>
+            <button
+              onClick={() => handleCopySpecific('html')}
+              className={`px-2 py-1 text-[11px] font-mono rounded transition-colors cursor-pointer ${
+                copiedTab === 'html'
+                  ? 'bg-orange-950/80 text-orange-200 border border-orange-700'
+                  : 'text-orange-400 hover:text-orange-300 hover:bg-slate-800/70'
+              }`}
+              title="Copy HTML to clipboard"
+            >
+              {copiedTab === 'html' ? '✓ HTML' : 'HTML'}
+            </button>
+            <button
+              onClick={() => handleCopySpecific('css')}
+              className={`px-2 py-1 text-[11px] font-mono rounded transition-colors cursor-pointer ${
+                copiedTab === 'css'
+                  ? 'bg-cyan-950/80 text-cyan-200 border border-cyan-700'
+                  : 'text-cyan-400 hover:text-cyan-300 hover:bg-slate-800/70'
+              }`}
+              title="Copy CSS to clipboard"
+            >
+              {copiedTab === 'css' ? '✓ CSS' : 'CSS'}
+            </button>
+            <button
+              onClick={() => handleCopySpecific('js')}
+              className={`px-2 py-1 text-[11px] font-mono rounded transition-colors cursor-pointer ${
+                copiedTab === 'js'
+                  ? 'bg-yellow-950/80 text-yellow-200 border border-yellow-700'
+                  : 'text-yellow-400 hover:text-yellow-300 hover:bg-slate-800/70'
+              }`}
+              title="Copy JavaScript to clipboard"
+            >
+              {copiedTab === 'js' ? '✓ JS' : 'JS'}
+            </button>
+          </div>
+
           {onOpenHistory && (
             <button
               onClick={onOpenHistory}
@@ -167,14 +280,24 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
             </button>
           )}
 
-          {activeTab !== 'preview' && (
+          {activeTab !== 'preview' && activeTab !== 'a11y' && (
             <>
               <button
-                onClick={handleCopy}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors cursor-pointer"
+                onClick={() => handleCopySpecific(activeTab as any)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors cursor-pointer shadow-xs"
+                title={`Copy current ${getTabLabel(activeTab)} code to clipboard`}
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? 'Copied!' : 'Copy Code'}</span>
+                {copiedTab === activeTab ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>Copied {getTabLabel(activeTab)}!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy {getTabLabel(activeTab)} to Clipboard</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={handleDownload}
@@ -193,12 +316,47 @@ export const CodeInspector: React.FC<CodeInspectorProps> = ({
       <div className="flex-1 flex flex-col min-h-[520px]">
         {activeTab === 'preview' ? (
           <LiveSandbox component={component} />
+        ) : activeTab === 'a11y' ? (
+          <A11yAuditPanel
+            htmlCode={component.html}
+            onApplyFix={handleApplyA11yFix}
+          />
         ) : (
           <div className="flex-1 relative flex flex-col bg-slate-950 font-mono text-xs">
-            <div className="flex items-center justify-between px-4 py-1.5 bg-slate-900/60 border-b border-slate-800 text-[11px] text-slate-400">
-              <span>{component.title} · {activeTab.toUpperCase()}</span>
-              <span>{getCurrentCode().split('\n').length} lines · {new Blob([getCurrentCode()]).size} bytes</span>
+            {/* Editor Sub-Header Bar with Dedicated Copy to Clipboard button */}
+            <div className="flex items-center justify-between px-4 py-2 bg-slate-900 border-b border-slate-800 text-[11px] text-slate-400">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-300 font-semibold">{component.title}</span>
+                <span className="text-slate-600">·</span>
+                <span className="px-2 py-0.5 rounded bg-slate-800 text-indigo-400 font-bold uppercase font-mono">
+                  {getTabLabel(activeTab)}
+                </span>
+                <span className="text-slate-500 text-[10px] hidden sm:inline">
+                  ({getCurrentCode().split('\n').length} lines · {new Blob([getCurrentCode()]).size} bytes)
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleCopySpecific(activeTab as any)}
+                  className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md transition-colors cursor-pointer"
+                  title={`Copy ${getTabLabel(activeTab)} code to clipboard`}
+                >
+                  {copiedTab === activeTab ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-300 font-bold">Copied to Clipboard!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Copy {getTabLabel(activeTab)} to Clipboard</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
+
             <textarea
               readOnly={!onUpdateComponentCode || activeTab === 'bundle' || activeTab === 'prompt'}
               value={getCurrentCode()}

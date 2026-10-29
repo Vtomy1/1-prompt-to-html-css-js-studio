@@ -10,6 +10,7 @@ import { TargetModel, StylingTechnique, LayoutStructure, GeneratedComponent, Cod
 import { bundleIntoSingleFile } from './utils/promptBuilder';
 import { AlertTriangle, CheckCircle2, X } from 'lucide-react';
 import { VersionHistoryDrawer } from './components/VersionHistoryDrawer';
+import { A11yAuditPanel } from './components/A11yAuditPanel';
 
 const createSnapshotObject = (
   comp: GeneratedComponent,
@@ -317,6 +318,7 @@ export default function App() {
                 onOpenHistory={() => setIsHistoryOpen(true)}
                 snapshotCount={snapshots.length}
                 onSaveSnapshot={() => handleSaveManualSnapshot()}
+                onShowNotice={showNotification}
               />
             </div>
           </div>
@@ -343,6 +345,13 @@ export default function App() {
         {/* VIEW 4: Dedicated Diagnostics View */}
         {activeView === 'diagnostics' && (
           <div className="max-w-4xl mx-auto w-full flex flex-col gap-6">
+            <A11yAuditPanel
+              htmlCode={currentComponent.html}
+              onApplyFix={(newHtml, notice) => {
+                handleUpdateComponentCode('html', newHtml);
+                showNotification('success', notice);
+              }}
+            />
             <ValidationAuditor component={currentComponent} />
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 text-xs text-slate-300">
               <h3 className="text-sm font-bold text-white mb-2">About Universal Model Compatibility</h3>
